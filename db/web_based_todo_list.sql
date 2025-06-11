@@ -3,7 +3,7 @@
 -- https://www.phpmyadmin.net/
 --
 -- Host: 127.0.0.1
--- Generation Time: Jun 12, 2025 at 11:43 AM
+-- Generation Time: Jun 11, 2025 at 09:19 PM
 -- Server version: 10.4.32-MariaDB
 -- PHP Version: 8.0.30
 
@@ -35,19 +35,6 @@ CREATE TABLE `notifications` (
   `sent` tinyint(1) DEFAULT 0
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 
---
--- Dumping data for table `notifications`
---
-
-INSERT INTO `notifications` (`id`, `task_id`, `notify_date`, `type`, `sent`) VALUES
-(13, 9, '2025-06-11 00:00:00', '1_day_before', 0),
-(14, 10, '2025-06-12 00:00:00', 'same_day', 0),
-(15, 11, '2025-06-12 00:00:00', 'same_day', 0),
-(16, 12, '2025-06-12 00:00:00', 'same_day', 0),
-(17, 13, '2025-06-12 00:00:00', 'same_day', 0),
-(18, 14, '2025-06-13 00:00:00', '1_day_before', 0),
-(19, 15, '2025-06-15 00:00:00', 'same_day', 0);
-
 -- --------------------------------------------------------
 
 --
@@ -64,19 +51,6 @@ CREATE TABLE `tasks` (
   `updated_at` timestamp NOT NULL DEFAULT current_timestamp() ON UPDATE current_timestamp(),
   `status` enum('pending','completed') DEFAULT 'pending'
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
-
---
--- Dumping data for table `tasks`
---
-
-INSERT INTO `tasks` (`id`, `user_id`, `title`, `description`, `scheduled_date`, `created_at`, `updated_at`, `status`) VALUES
-(9, 2, 'wew', 'wew', '2025-06-12', '2025-06-12 08:06:57', '2025-06-12 09:28:22', 'completed'),
-(10, 2, 'ww', 'ww', '2025-06-12', '2025-06-12 09:28:46', '2025-06-12 09:29:13', 'completed'),
-(11, 2, 'ww', 'ww', '2025-06-12', '2025-06-12 09:29:13', '2025-06-12 09:29:21', 'completed'),
-(12, 2, 'ww', 'ww', '2025-06-12', '2025-06-12 09:29:21', '2025-06-12 09:29:33', 'completed'),
-(13, 2, 'wwew', 'weww', '2025-06-12', '2025-06-12 09:30:12', '2025-06-12 09:32:57', 'completed'),
-(14, 2, 'wew', 'ww', '2025-06-13', '2025-06-12 09:33:24', '2025-06-12 09:37:15', 'completed'),
-(15, 2, 'wwew', 'sssdsds', '2025-06-15', '2025-06-12 09:37:45', '2025-06-12 09:37:45', 'pending');
 
 -- --------------------------------------------------------
 
@@ -98,7 +72,7 @@ CREATE TABLE `users` (
 --
 
 INSERT INTO `users` (`id`, `full_name`, `email`, `password`, `created_at`, `profile_image`) VALUES
-(2, 'Almento', 'almento@gmail.com', '$2y$10$jXe0u.c5MvEsp69ht.wghO65GFv.z1fEaclxRmhF7hHMiK5F1gXfW', '2025-06-12 08:06:42', NULL);
+(2, 'Almento', 'almento@gmail.com', '$2y$10$jXe0u.c5MvEsp69ht.wghO65GFv.z1fEaclxRmhF7hHMiK5F1gXfW', '2025-06-12 08:06:42', 'profile_2_1749669544.png');
 
 --
 -- Indexes for dumped tables
@@ -133,13 +107,13 @@ ALTER TABLE `users`
 -- AUTO_INCREMENT for table `notifications`
 --
 ALTER TABLE `notifications`
-  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=20;
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=29;
 
 --
 -- AUTO_INCREMENT for table `tasks`
 --
 ALTER TABLE `tasks`
-  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=16;
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=26;
 
 --
 -- AUTO_INCREMENT for table `users`
