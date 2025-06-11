@@ -1,4 +1,8 @@
 <?php
+// Set PHP timezone to Asia/Manila to avoid date issues
+ini_set('date.timezone', 'Asia/Manila');
+date_default_timezone_set('Asia/Manila');
+
 session_start();
 require_once 'config/database.php';
 
@@ -48,19 +52,16 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['action'])) {
         $title = trim($_POST['title']);
         $description = trim($_POST['description']);
         $scheduled_date = $_POST['scheduled_date'];
-        $notify_type = $_POST['notify_type'];
+        error_log('Scheduled date: ' . $scheduled_date);
+        error_log('PHP timezone: ' . date_default_timezone_get());
+        $notify_type = 'same_day'; // Default value since dropdown is removed
 
         if (!empty($title) && !empty($scheduled_date)) {
             $stmt = $pdo->prepare("INSERT INTO tasks (user_id, title, description, scheduled_date) VALUES (?, ?, ?, ?)");
             if ($stmt->execute([$_SESSION['user_id'], $title, $description, $scheduled_date])) {
                 $task_id = $pdo->lastInsertId();
-                
-                // Create notification
-                $notify_date = date('Y-m-d', strtotime($scheduled_date . ' -1 day'));
-                if ($notify_type == 'same_day') {
-                    $notify_date = $scheduled_date;
-                }
-                
+                // Always set notification for the due date
+                $notify_date = $scheduled_date;
                 $stmt = $pdo->prepare("INSERT INTO notifications (task_id, notify_date, type) VALUES (?, ?, ?)");
                 $stmt->execute([$task_id, $notify_date, $notify_type]);
             }
@@ -68,7 +69,6 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['action'])) {
     } elseif ($_POST['action'] == 'update_status') {
         $task_id = $_POST['task_id'];
         $status = $_POST['status'];
-        
         $stmt = $pdo->prepare("UPDATE tasks SET status = ? WHERE id = ? AND user_id = ?");
         $stmt->execute([$status, $task_id, $_SESSION['user_id']]);
     }
@@ -132,17 +132,13 @@ $stmtNotif = $pdo->prepare("
     FROM notifications n
     JOIN tasks t ON n.task_id = t.id
     WHERE t.user_id = ? 
-      AND (
-          (DATE(n.notify_date) = ? AND n.type = 'same_day') OR
-          (DATE(n.notify_date) = ? AND n.type = '1_day_before')
-      )
+      AND DATE(n.notify_date) = ?
       AND n.sent = 0
       AND t.status = 'pending'
 ");
 $stmtNotif->execute([
     $_SESSION['user_id'], 
-    $date,  // For same day notifications
-    date('Y-m-d', strtotime($date . ' +1 day'))  // For 1 day before notifications
+    $date
 ]);
 $notifications = $stmtNotif->fetchAll();
 $notifCount = count($notifications);
@@ -159,6 +155,18 @@ $stmtPendingTasks = $pdo->prepare("
 ");
 $stmtPendingTasks->execute([$_SESSION['user_id']]);
 $pendingTasks = $stmtPendingTasks->fetchAll();
+
+// Fetch completed tasks for the selected month if monthly view
+$completedTasksByDay = [];
+if ($view_type === 'monthly') {
+    $monthStart = date('Y-m-01', strtotime($date));
+    $monthEnd = date('Y-m-t', strtotime($date));
+    $stmtMonth = $pdo->prepare("SELECT scheduled_date, title FROM tasks WHERE user_id = ? AND status = 'completed' AND scheduled_date BETWEEN ? AND ?");
+    $stmtMonth->execute([$_SESSION['user_id'], $monthStart, $monthEnd]);
+    foreach ($stmtMonth->fetchAll(PDO::FETCH_ASSOC) as $row) {
+        $completedTasksByDay[$row['scheduled_date']][] = $row['title'];
+    }
+}
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -173,7 +181,30 @@ $pendingTasks = $stmtPendingTasks->fetchAll();
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
     <style>
         body { font-family: 'Inter', sans-serif; background: #f4f8fb; }
-        .sidebar { width: 220px; background: linear-gradient(160deg, #2563eb 0%, #1e40af 100%); min-height: 100vh; display: flex; flex-direction: column; box-shadow: 2px 0 16px #0001; position: fixed; top: 0; left: 0; z-index: 40; }
+        .sidebar { 
+            width: 220px; 
+            background: linear-gradient(160deg, #2563eb 0%, #1e40af 100%); 
+            min-height: 100vh; 
+            display: flex; 
+            flex-direction: column; 
+            box-shadow: 2px 0 16px #0001; 
+            position: fixed; 
+            top: 0; 
+            left: 0; 
+            z-index: 40;
+            transition: transform 0.3s ease-in-out;
+        }
+        @media (max-width: 768px) {
+            .sidebar {
+                transform: translateX(-100%);
+            }
+            .sidebar.open {
+                transform: translateX(0);
+            }
+            .main-content {
+                padding-left: 0 !important;
+            }
+        }
         .sidebar .nav-link { color: #fff; opacity: 0.85; transition: 0.2s; }
         .sidebar .nav-link.active, .sidebar .nav-link:hover { background: #2563eb; opacity: 1; }
         .sidebar .profile-img { width: 70px; height: 70px; border-radius: 50%; object-fit: cover; border: 3px solid #fff; box-shadow: 0 2px 12px #0002; transition: 0.2s; }
@@ -186,10 +217,23 @@ $pendingTasks = $stmtPendingTasks->fetchAll();
         .scrollbar::-webkit-scrollbar { width: 8px; }
         .scrollbar::-webkit-scrollbar-thumb { background: #e0e7ef; border-radius: 8px; }
         .notif-dropdown { min-width: 320px; }
+        @media (max-width: 640px) {
+            .notif-dropdown {
+                min-width: 280px;
+                right: -10px;
+            }
+        }
     </style>
 </head>
 <body>
     <div>
+        <!-- Mobile Menu Button -->
+        <button id="mobileMenuBtn" class="md:hidden fixed top-4 left-4 z-50 p-2 rounded-lg bg-blue-600 text-white">
+            <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"></path>
+            </svg>
+        </button>
+
         <!-- Sidebar -->
         <aside class="sidebar p-5 text-white">
             <div class="flex flex-col items-center mb-8">
@@ -209,7 +253,7 @@ $pendingTasks = $stmtPendingTasks->fetchAll();
                     <svg class="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6"></path></svg>
                     Dashboard
                 </a>
-                <a href="#" class="nav-link flex items-center px-4 py-3 rounded-lg font-medium">
+                <a href="calendar.php" class="nav-link flex items-center px-4 py-3 rounded-lg font-medium">
                     <svg class="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"></path></svg>
                     Calendar
                 </a>
@@ -221,69 +265,32 @@ $pendingTasks = $stmtPendingTasks->fetchAll();
         </aside>
         <!-- Main Content -->
         <main class="main-content min-h-screen bg-[#f8fafc] scrollbar">
-            <div class="max-w-4xl mx-auto px-4 sm:px-8">
-                <!-- Topbar with Notification Icon -->
-                <div class="flex justify-between items-center mb-10 relative">
-                    <h1 class="text-3xl font-bold text-blue-900 tracking-tight">Dashboard</h1>
-                    <div class="relative">
-                        <button id="notifBtn" class="relative focus:outline-none">
-                            <!-- Bell Icon (Heroicons) -->
-                            <svg class="w-7 h-7 text-blue-700" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9" />
+            <div class="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
+                <!-- Topbar -->
+                <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-10 relative">
+                    <h1 class="text-2xl sm:text-3xl font-bold text-blue-900 tracking-tight">Dashboard</h1>
+                    <div class="relative w-full sm:w-auto">
+                        <button id="notifBtn" class="p-2 text-gray-600 hover:text-blue-600 focus:outline-none">
+                            <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9"></path>
                             </svg>
-                            <?php if ($notifCount > 0): ?>
-                                <span class="absolute top-0 right-0 block w-3 h-3 rounded-full ring-2 ring-white bg-red-500"></span>
-                            <?php endif; ?>
+                            <span id="notifBadge" class="absolute -top-1 -right-1 bg-red-500 text-white text-xs rounded-full h-5 w-5 flex items-center justify-center">0</span>
                         </button>
-                        <!-- Dropdown -->
-                        <div id="notifDropdown" class="notif-dropdown absolute right-0 mt-2 bg-white border border-blue-100 rounded-lg shadow-lg z-50 hidden">
-                            <div class="p-4 border-b text-blue-900 font-semibold flex items-center">
-                                <svg class="w-5 h-5 mr-2 text-blue-700" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9" />
-                                </svg>
-                                Notifications
+                        <div id="notifDropdown" class="hidden absolute right-0 mt-2 w-80 bg-white rounded-lg shadow-xl border border-gray-200 z-50">
+                            <div class="p-4">
+                                <div class="flex justify-between items-center mb-2">
+                                    <h3 class="text-lg font-semibold text-gray-800">Notifications</h3>
+                                    <button id="markAllReadBtn" class="text-sm text-blue-600 hover:text-blue-800 font-medium">Mark all as read</button>
+                                </div>
+                                <div id="notifList" class="space-y-2 max-h-96 overflow-y-auto">
+                                    <!-- Notifications will be loaded here -->
+                                </div>
                             </div>
-                            <?php if ($notifCount > 0): ?>
-                                <ul class="max-h-60 overflow-y-auto divide-y divide-blue-50">
-                                    <?php foreach ($notifications as $notif): ?>
-                                        <li class="px-4 py-3 text-sm text-blue-900">
-                                            <span class="font-semibold"><?php echo htmlspecialchars($notif['title']); ?></span>
-                                            is due <?php echo ($notif['type'] === '1_day_before') ? 'tomorrow' : 'today'; ?> (<?php echo date('F j, Y', strtotime($notif['scheduled_date'])); ?>)
-                                        </li>
-                                    <?php endforeach; ?>
-                                </ul>
-                            <?php else: ?>
-                                <div class="px-4 py-6 text-center text-gray-400">No new notifications</div>
-                            <?php endif; ?>
                         </div>
                     </div>
                 </div>
-                <script>
-                // Notification dropdown toggle
-                document.addEventListener('DOMContentLoaded', function() {
-                    const btn = document.getElementById('notifBtn');
-                    const dropdown = document.getElementById('notifDropdown');
-                    btn.addEventListener('click', function(e) {
-                        e.stopPropagation();
-                        dropdown.classList.toggle('hidden');
-                    });
-                    document.addEventListener('click', function(e) {
-                        if (!dropdown.classList.contains('hidden')) {
-                            dropdown.classList.add('hidden');
-                        }
-                    });
-                });
-                </script>
-                <?php 
-                // Mark notifications as sent
-                if ($notifCount > 0) {
-                    $notifIds = array_column($notifications, 'id');
-                    $in  = str_repeat('?,', count($notifIds) - 1) . '?';
-                    $pdo->prepare("UPDATE notifications SET sent = 1 WHERE id IN ($in)")->execute($notifIds);
-                }
-                ?>
                 <!-- Stats -->
-                <div class="grid grid-cols-1 md:grid-cols-3 gap-8 mb-10">
+                <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-8 mb-10">
                     <div class="card p-7 flex items-center justify-between">
                         <div>
                             <p class="text-sm text-gray-500 mb-1">Total Tasks</p>
@@ -313,10 +320,10 @@ $pendingTasks = $stmtPendingTasks->fetchAll();
                     </div>
                 </div>
                 <!-- Task Management Section -->
-                <div class="bg-white rounded-lg shadow-sm p-6 mb-8">
-                    <div class="flex justify-between items-center mb-6">
+                <div class="bg-white rounded-lg shadow-sm p-4 sm:p-6 mb-8">
+                    <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-6">
                         <h2 class="text-xl font-semibold text-gray-800">Task Management</h2>
-                        <button onclick="toggleTaskForm()" class="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors flex items-center">
+                        <button onclick="toggleTaskForm()" class="w-full sm:w-auto bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors flex items-center justify-center">
                             <svg class="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"></path>
                             </svg>
@@ -345,14 +352,6 @@ $pendingTasks = $stmtPendingTasks->fetchAll();
                                 <textarea name="description" id="description" rows="3"
                                           class="w-full px-4 py-2 rounded-lg border border-gray-300 focus:ring-2 focus:ring-blue-500 focus:border-blue-500"></textarea>
                             </div>
-                            <div>
-                                <label class="block text-sm font-medium text-gray-700 mb-2" for="notify_type">Notification</label>
-                                <select name="notify_type" id="notify_type"
-                                        class="w-full px-4 py-2 rounded-lg border border-gray-300 focus:ring-2 focus:ring-blue-500 focus:border-blue-500">
-                                    <option value="1_day_before">1 Day Before</option>
-                                    <option value="same_day">Same Day</option>
-                                </select>
-                            </div>
                             <div class="flex justify-end">
                                 <button type="submit"
                                         class="bg-blue-600 text-white px-6 py-2 rounded-lg hover:bg-blue-700 transition-colors">
@@ -363,8 +362,8 @@ $pendingTasks = $stmtPendingTasks->fetchAll();
                     </div>
 
                     <!-- View Controls -->
-                    <div class="flex flex-wrap items-center justify-between gap-4 mb-6">
-                        <div class="flex space-x-3">
+                    <div class="flex flex-col sm:flex-row flex-wrap items-start sm:items-center justify-between gap-4 mb-6">
+                        <div class="flex flex-wrap gap-2">
                             <button onclick="changeView('daily')" 
                                     class="px-4 py-2 rounded-lg font-medium transition-colors <?php echo $view_type === 'daily' ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'; ?>">
                                 Daily
@@ -378,9 +377,9 @@ $pendingTasks = $stmtPendingTasks->fetchAll();
                                 Monthly
                             </button>
                         </div>
-                        <div class="flex items-center space-x-2">
+                        <div class="flex flex-col sm:flex-row items-start sm:items-center gap-2">
                             <input type="date" id="date_picker" value="<?php echo $date; ?>"
-                                   class="px-4 py-2 rounded-lg border border-gray-300 focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                                   class="w-full sm:w-auto px-4 py-2 rounded-lg border border-gray-300 focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                                    onchange="updateDate(this.value)">
                             <span class="text-sm text-gray-500">
                                 <?php
@@ -401,10 +400,14 @@ $pendingTasks = $stmtPendingTasks->fetchAll();
                     <div class="bg-gray-100 p-4 rounded-lg mb-4">
                         <pre><?php print_r($debug_info); ?></pre>
                     </div>
+                    <div class="bg-gray-100 p-4 rounded-lg mb-4">
+                        <h4 class="font-bold mb-2">Debug: Pending Tasks Array</h4>
+                        <pre><?php print_r($pendingTasks); ?></pre>
+                    </div>
                     <?php endif; ?>
 
                     <!-- Tasks Grid -->
-                    <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                    <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-6">
                         <?php if (empty($tasks)): ?>
                             <div class="col-span-full text-center py-12">
                                 <div class="w-16 h-16 bg-blue-50 rounded-full flex items-center justify-center mx-auto mb-4">
@@ -448,6 +451,24 @@ $pendingTasks = $stmtPendingTasks->fetchAll();
         </main>
     </div>
     <script>
+    // Add mobile menu functionality
+    document.getElementById('mobileMenuBtn').addEventListener('click', function() {
+        document.querySelector('.sidebar').classList.toggle('open');
+    });
+
+    // Close sidebar when clicking outside on mobile
+    document.addEventListener('click', function(event) {
+        const sidebar = document.querySelector('.sidebar');
+        const mobileMenuBtn = document.getElementById('mobileMenuBtn');
+        
+        if (window.innerWidth <= 768 && 
+            !sidebar.contains(event.target) && 
+            !mobileMenuBtn.contains(event.target) && 
+            sidebar.classList.contains('open')) {
+            sidebar.classList.remove('open');
+        }
+    });
+
     function toggleTaskForm() {
         const form = document.getElementById('taskForm');
         form.classList.toggle('hidden');
@@ -502,7 +523,7 @@ $pendingTasks = $stmtPendingTasks->fetchAll();
         }, 5000);
     };
 
-    function showNotification(message, date = null) {
+    function showNotification(message, date = null, currentTaskNumber = null, totalTasks = null) {
         // Create notification element
         const notif = document.createElement('div');
         notif.className = 'fixed top-4 right-4 bg-white p-4 rounded-lg shadow-lg z-50 transform transition-transform duration-300 translate-x-full';
@@ -523,6 +544,11 @@ $pendingTasks = $stmtPendingTasks->fetchAll();
                 console.error('Date parsing error:', e);
             }
         }
+
+        let taskCountText = '';
+        if (currentTaskNumber !== null && totalTasks !== null && totalTasks > 1) {
+            taskCountText = ` (${currentTaskNumber} of ${totalTasks})`;
+        }
         
         notif.innerHTML = `
             <div class="flex items-center">
@@ -530,7 +556,7 @@ $pendingTasks = $stmtPendingTasks->fetchAll();
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9" />
                 </svg>
                 <div>
-                    <p class="font-semibold text-gray-900">Task Reminder</p>
+                    <p class="font-semibold text-gray-900">Task Reminder${taskCountText}</p>
                     <p class="text-sm text-gray-600">${message}</p>
                     ${dateStr ? `<p class="text-xs text-blue-600 mt-1">Due: ${dateStr}</p>` : ''}
                 </div>
@@ -553,41 +579,132 @@ $pendingTasks = $stmtPendingTasks->fetchAll();
     }
 
     function updateNotificationCount() {
-        // Fetch latest notification count
         fetch('get_notifications.php')
             .then(response => response.json())
             .then(data => {
-                const notifCount = data.count;
-                const notifBadge = document.querySelector('#notifBtn .rounded-full');
-                
-                if (notifCount > 0) {
-                    if (!notifBadge) {
-                        const badge = document.createElement('span');
-                        badge.className = 'absolute top-0 right-0 block w-3 h-3 rounded-full ring-2 ring-white bg-red-500';
-                        document.querySelector('#notifBtn').appendChild(badge);
+                const badge = document.getElementById('notifBadge');
+                badge.textContent = data.count;
+                if (data.count > 0) {
+                    badge.classList.remove('hidden');
+                    // Adjust size for larger numbers
+                    if (data.count >= 10) {
+                        badge.style.width = 'auto';
+                        badge.style.minWidth = '24px';
+                        badge.style.padding = '0 6px';
+                    } else {
+                        badge.style.width = '24px';
+                        badge.style.minWidth = '24px';
+                        badge.style.padding = '';
                     }
                 } else {
-                    notifBadge?.remove();
+                    badge.classList.add('hidden');
                 }
             });
     }
+
+    // Update notification count every 30 seconds
+    setInterval(updateNotificationCount, 30000);
+    updateNotificationCount(); // Initial update
+
+    function markAsRead(notificationId = null) {
+        let formData = new FormData();
+        formData.append('user_id', <?php echo $_SESSION['user_id']; ?>);
+        if (notificationId) {
+            formData.append('notification_id', notificationId);
+        } else {
+            formData.append('mark_all', 'true');
+        }
+
+        fetch('mark_notification_read.php', {
+            method: 'POST',
+            body: formData
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                updateNotificationCount();
+                loadNotifications(); // Reload notifications after marking as read
+            } else {
+                console.error('Failed to mark notification(s) as read:', data.message);
+            }
+        })
+        .catch(error => {
+            console.error('Error marking notification(s) as read:', error);
+        });
+    }
+
+    function loadNotifications() {
+        fetch('get_notifications.php')
+            .then(response => response.json())
+            .then(data => {
+                const notifList = document.getElementById('notifList');
+                notifList.innerHTML = ''; // Clear existing notifications
+                
+                if (data.notifications && data.notifications.length > 0) {
+                    data.notifications.forEach(notif => {
+                        const notifElement = document.createElement('div');
+                        notifElement.className = 'p-3 bg-gray-50 rounded-lg hover:bg-gray-100 transition-colors';
+                        notifElement.innerHTML = `
+                            <div class="flex items-start justify-between">
+                                <div class="flex-1">
+                                    <p class="text-sm font-medium text-gray-900">${notif.title}</p>
+                                    <p class="text-xs text-gray-500 mt-1">Due: ${new Date(notif.scheduled_date).toLocaleDateString('en-US', {
+                                        weekday: 'long',
+                                        year: 'numeric',
+                                        month: 'long',
+                                        day: 'numeric'
+                                    })}</p>
+                                </div>
+                                <button onclick="markAsRead(${notif.id})" class="text-xs text-blue-600 hover:text-blue-800 font-medium ml-2">Mark as read</button>
+                            </div>
+                        `;
+                        notifList.appendChild(notifElement);
+                    });
+                } else {
+                    notifList.innerHTML = `
+                        <div class="text-center py-4 text-gray-500">
+                            <p>No notifications</p>
+                        </div>
+                    `;
+                }
+            });
+    }
+
+    document.getElementById('notifBtn').addEventListener('click', function() {
+        const dropdown = document.getElementById('notifDropdown');
+        dropdown.classList.toggle('hidden');
+        if (!dropdown.classList.contains('hidden')) {
+            loadNotifications(); // Load notifications when dropdown is opened
+        }
+    });
+
+    document.getElementById('markAllReadBtn').addEventListener('click', function() {
+        markAsRead(); // Call markAsRead without an ID to mark all
+    });
 
     // Show pending tasks on page load
     document.addEventListener('DOMContentLoaded', function() {
         <?php if (!empty($pendingTasks)): ?>
             // Show a summary notification
-            showNotification('You have <?php echo count($pendingTasks); ?> pending task(s) that need your attention!');
+            <?php if (count($pendingTasks) > 1): ?>
+                showNotification('You have <?php echo count($pendingTasks); ?> pending tasks that need your attention!');
+            <?php elseif (count($pendingTasks) === 1): ?>
+                showNotification('You have 1 pending task that needs your attention!');
+            <?php endif; ?>
             
             // Show individual task notifications with a delay
             <?php foreach ($pendingTasks as $index => $task): ?>
                 setTimeout(() => {
                     showNotification(
                         '<?php echo htmlspecialchars($task['title']); ?>',
-                        '<?php echo htmlspecialchars($task['scheduled_date']); ?>'
+                        '<?php echo htmlspecialchars($task['scheduled_date']); ?>',
+                        <?php echo $index + 1; ?>, // current task number (1-indexed)
+                        <?php echo count($pendingTasks); ?> // total tasks
                     );
                 }, <?php echo ($index + 1) * 6000; ?>);
             <?php endforeach; ?>
         <?php endif; ?>
+        updateNotificationCount(); // Initial call to display badge on load
     });
     </script>
 </body>

@@ -5,22 +5,26 @@ require_once 'config/database.php';
 header('Content-Type: application/json');
 
 if (!isset($_SESSION['user_id'])) {
-    echo json_encode(['count' => 0]);
+    echo json_encode(['count' => 0, 'notifications' => []]);
     exit();
 }
 
+// Get notifications for today
 $stmt = $pdo->prepare("
-    SELECT COUNT(*) 
+    SELECT n.*, t.title, t.scheduled_date, t.status
     FROM notifications n
     JOIN tasks t ON n.task_id = t.id
     WHERE t.user_id = ? 
-      AND (
-          (DATE(n.notify_date) = CURDATE() AND n.type = 'same_day') OR
-          (DATE(n.notify_date) = DATE_ADD(CURDATE(), INTERVAL 1 DAY) AND n.type = '1_day_before')
-      )
-      AND n.sent = 0
+    AND DATE(n.notify_date) = CURDATE()
+    AND n.sent = 0
+    AND t.status = 'pending'
+    ORDER BY t.scheduled_date ASC
 ");
 $stmt->execute([$_SESSION['user_id']]);
-$count = $stmt->fetchColumn();
+$notifications = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
-echo json_encode(['count' => $count]); 
+// Return both count and notifications
+echo json_encode([
+    'count' => count($notifications),
+    'notifications' => $notifications
+]); 

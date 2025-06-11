@@ -3,7 +3,7 @@
 -- https://www.phpmyadmin.net/
 --
 -- Host: 127.0.0.1
--- Generation Time: Jun 12, 2025 at 10:04 AM
+-- Generation Time: Jun 12, 2025 at 11:43 AM
 -- Server version: 10.4.32-MariaDB
 -- PHP Version: 8.0.30
 
@@ -40,8 +40,13 @@ CREATE TABLE `notifications` (
 --
 
 INSERT INTO `notifications` (`id`, `task_id`, `notify_date`, `type`, `sent`) VALUES
-(11, 7, '2025-06-12 00:00:00', 'same_day', 1),
-(12, 8, '2025-06-12 00:00:00', 'same_day', 1);
+(13, 9, '2025-06-11 00:00:00', '1_day_before', 0),
+(14, 10, '2025-06-12 00:00:00', 'same_day', 0),
+(15, 11, '2025-06-12 00:00:00', 'same_day', 0),
+(16, 12, '2025-06-12 00:00:00', 'same_day', 0),
+(17, 13, '2025-06-12 00:00:00', 'same_day', 0),
+(18, 14, '2025-06-13 00:00:00', '1_day_before', 0),
+(19, 15, '2025-06-15 00:00:00', 'same_day', 0);
 
 -- --------------------------------------------------------
 
@@ -65,8 +70,13 @@ CREATE TABLE `tasks` (
 --
 
 INSERT INTO `tasks` (`id`, `user_id`, `title`, `description`, `scheduled_date`, `created_at`, `updated_at`, `status`) VALUES
-(7, 1, 'wew', 'wew', '2025-06-12', '2025-06-12 08:01:28', '2025-06-12 08:01:28', 'pending'),
-(8, 1, 'wew', 'wew', '2025-06-12', '2025-06-12 08:02:11', '2025-06-12 08:02:42', 'completed');
+(9, 2, 'wew', 'wew', '2025-06-12', '2025-06-12 08:06:57', '2025-06-12 09:28:22', 'completed'),
+(10, 2, 'ww', 'ww', '2025-06-12', '2025-06-12 09:28:46', '2025-06-12 09:29:13', 'completed'),
+(11, 2, 'ww', 'ww', '2025-06-12', '2025-06-12 09:29:13', '2025-06-12 09:29:21', 'completed'),
+(12, 2, 'ww', 'ww', '2025-06-12', '2025-06-12 09:29:21', '2025-06-12 09:29:33', 'completed'),
+(13, 2, 'wwew', 'weww', '2025-06-12', '2025-06-12 09:30:12', '2025-06-12 09:32:57', 'completed'),
+(14, 2, 'wew', 'ww', '2025-06-13', '2025-06-12 09:33:24', '2025-06-12 09:37:15', 'completed'),
+(15, 2, 'wwew', 'sssdsds', '2025-06-15', '2025-06-12 09:37:45', '2025-06-12 09:37:45', 'pending');
 
 -- --------------------------------------------------------
 
@@ -88,7 +98,7 @@ CREATE TABLE `users` (
 --
 
 INSERT INTO `users` (`id`, `full_name`, `email`, `password`, `created_at`, `profile_image`) VALUES
-(1, 'Almento', 'almento@gmail.com', '$2y$10$bdZY00dtWpcZoF8x1Q9QWe3xYIo/kO.JDrtN.WkWtCuwMxTAqdwx6', '2025-06-12 07:06:48', 'profile_1_1749712843.png');
+(2, 'Almento', 'almento@gmail.com', '$2y$10$jXe0u.c5MvEsp69ht.wghO65GFv.z1fEaclxRmhF7hHMiK5F1gXfW', '2025-06-12 08:06:42', NULL);
 
 --
 -- Indexes for dumped tables
@@ -123,19 +133,19 @@ ALTER TABLE `users`
 -- AUTO_INCREMENT for table `notifications`
 --
 ALTER TABLE `notifications`
-  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=13;
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=20;
 
 --
 -- AUTO_INCREMENT for table `tasks`
 --
 ALTER TABLE `tasks`
-  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=9;
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=16;
 
 --
 -- AUTO_INCREMENT for table `users`
 --
 ALTER TABLE `users`
-  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=2;
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=3;
 
 --
 -- Constraints for dumped tables
